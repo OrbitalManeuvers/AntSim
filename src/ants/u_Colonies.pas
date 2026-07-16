@@ -25,11 +25,13 @@ type
     constructor Create(const aWeights: TColonyWeights; const aNestLocation: TPoint; aCount: Integer);
     destructor Destroy; override;
     procedure StepAnts(const aGrid: TCellGrid; const aNotifier: ISimNotifier);
+    procedure ApplyPheromones;
   end;
 
 const
   SPAWNS_PER_TICK = 3;
   PHEROMONE_DEPOSIT = 1.0;
+  DECAY_FACTOR = 0.98;         // multiply each cell by this per tick
   WOBBLE_RANGE = Pi / 6;       // ±30° random wobble
   SENSE_ANGLE  = Pi / 4;       // ±45° cone for sensing
   SENSE_DIST   = 3;            // how far ahead to sample pheromone
@@ -207,6 +209,23 @@ begin
       end;
     end;
   end;
+end;
+
+procedure TColony.ApplyPheromones;
+var
+  x, y: TGridDimension;
+begin
+  for y := Low(TGridDimension) to High(TGridDimension) do
+    for x := Low(TGridDimension) to High(TGridDimension) do
+    begin
+      // merge deposits into live layers
+      fHomeLayer[x, y] := (fHomeLayer[x, y] + fHomeDeposits[x, y]) * DECAY_FACTOR;
+      fFoodLayer[x, y] := (fFoodLayer[x, y] + fFoodDeposits[x, y]) * DECAY_FACTOR;
+
+      // zero accumulators
+      fHomeDeposits[x, y] := 0;
+      fFoodDeposits[x, y] := 0;
+    end;
 end;
 
 end.

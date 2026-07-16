@@ -48,7 +48,8 @@ begin
   for Col in fColonies do
     Col.StepAnts(Grid, fNotifier);
 
-  // TODO: apply deposits, decay, diffusion
+  for Col in fColonies do
+    Col.ApplyPheromones;
 end;
 
 end.

@@ -38,6 +38,7 @@ type
     Controller: TSimController;
     Simulator: TSimulator;
     SimSpeed: TButtonBar;
+    StepsPerTick: Integer;
     procedure HandleSpeedClick(Sender: TObject);
   public
     constructor Create(AOwner: TComponent); override;
@@ -49,6 +50,19 @@ implementation
 
 {$R *.dfm}
 
+type
+  TSpeedEntry = record
+    caption: string;
+    value: Integer
+  end;
+
+const
+  SIM_SPEEDS: array[0..3] of TSpeedEntry = (
+    (caption: 'Pause'; value: 0),
+    (caption: '1x'; value: 1),
+    (caption: '2x'; value: 2),
+    (caption: '4x'; value: 4)
+  );
 
 
 { TSessionFrame }
@@ -64,11 +78,18 @@ begin
   SimSpeed := TButtonBar.Create(Self);
   SimSpeed.BoundsRect := Placeholder.BoundsRect;
   SimSpeed.Parent := Placeholder.Parent;
-  SimSpeed.Captions := ['Pause', '1x', '2x', '5x', '10x'];
+
+  var captions: TCaptionArray;
+  SetLength(captions, Length(SIM_SPEEDS));
+  for var i := 0 to High(SIM_SPEEDS) do
+    captions[i] := SIM_SPEEDS[i].caption;
+
+  SimSpeed.Captions := captions;
   SimSpeed.Visible := True;
   SimSpeed.OnClick := HandleSpeedClick;
   Placeholder.Visible := False;
 
+  StepsPerTick := 0;
 end;
 
 destructor TSessionFrame.Destroy;
@@ -79,6 +100,13 @@ begin
   inherited;
 end;
 
+procedure TSessionFrame.CreateSession(const Params: TSessionParameters);
+begin
+  ToolPages.ActivePage := SetupPage;
+  TotalAnts.Text := Params.TotalAnts.ToString;
+  TotalFoodUnits.Text := Params.TotalFoodUnits.ToString;
+end;
+
 procedure TSessionFrame.FoodDelivered(const aNest: TPoint);
 begin
   //
@@ -87,13 +115,6 @@ end;
 procedure TSessionFrame.FoodTaken(const aLoc: TPoint);
 begin
   Dec(Simulator.Grid[aLoc.X, aLoc.Y].FoodAmount);
-end;
-
-procedure TSessionFrame.CreateSession(const Params: TSessionParameters);
-begin
-  ToolPages.ActivePage := SetupPage;
-  TotalAnts.Text := Params.TotalAnts.ToString;
-  TotalFoodUnits.Text := Params.TotalFoodUnits.ToString;
 end;
 
 procedure TSessionFrame.LaunchBtnClick(Sender: TObject);
@@ -129,33 +150,18 @@ begin
   Colonies.Add(colony);
 
   Simulator.AddColony(colony);
-
-  SimTimer.Interval := 1000;
-  SimTimer.Enabled := False;
 end;
 
 procedure TSessionFrame.HandleSimTimer(Sender: TObject);
 begin
-  SimTimer.Enabled := False;
-
-  var colony := Colonies.First;
-  if Assigned(colony) then
-  begin
-    colony.StepAnts(Simulator.Grid, Self);
-  end;
-
-
+  for var step := 0 to StepsPerTick - 1 do
+    Simulator.Step;
 end;
 
 procedure TSessionFrame.HandleSpeedClick(Sender: TObject);
 begin
-  if SimSpeed.ItemIndex = 0 then
-    SimTimer.Enabled := False
-  else
-  begin
-    SimTimer.Interval := 1000;
-    SimTimer.Enabled := True;
-  end;
+  StepsPerTick := SIM_SPEEDS[SimSpeed.ItemIndex].value;
+  SimTimer.Enabled := StepsPerTick > 0;
 end;
 
 procedure TSessionFrame.ArenaDraw(ASender: TObject; const ACanvas: ISkCanvas;
