@@ -1,15 +1,19 @@
 object SessionFrame: TSessionFrame
   Left = 0
   Top = 0
-  Width = 640
-  Height = 480
+  Width = 801
+  Height = 618
+  DoubleBuffered = True
+  ParentDoubleBuffered = False
   TabOrder = 0
+  OnMouseWheel = FrameMouseWheel
   object Arena: TSkPaintBox
     Left = 0
     Top = 72
-    Width = 640
-    Height = 408
+    Width = 801
+    Height = 546
     Align = alClient
+    OnResize = ArenaResize
     OnDraw = ArenaDraw
     ExplicitLeft = 56
     ExplicitTop = 112
@@ -20,19 +24,21 @@ object SessionFrame: TSessionFrame
     AlignWithMargins = True
     Left = 3
     Top = 3
-    Width = 634
+    Width = 795
     Height = 66
     Align = alTop
     ShowCaption = False
     TabOrder = 0
+    ExplicitWidth = 634
     object ToolPages: TPageControl
       Left = 1
       Top = 1
-      Width = 632
+      Width = 793
       Height = 64
       ActivePage = SimPage
       Align = alClient
       TabOrder = 0
+      ExplicitWidth = 632
       object SetupPage: TTabSheet
         TabVisible = False
         object TotalAnts: TLabeledEdit

@@ -1,4 +1,4 @@
-unit u_Colonies;
+﻿unit u_Colonies;
 
 interface
 
@@ -12,7 +12,6 @@ type
 
   TColony = class
   private
-    fAnts: array of TAnt;
     fNest: TPoint;
 
     fWeights: TColonyWeights;
@@ -22,6 +21,7 @@ type
     fFoodDeposits: TPheromoneLayer;
 
   public
+    Ants: array of TAnt;
     constructor Create(const aWeights: TColonyWeights; const aNestLocation: TPoint; aCount: Integer);
     destructor Destroy; override;
     procedure StepAnts(const aGrid: TCellGrid; const aNotifier: ISimNotifier);
@@ -47,13 +47,13 @@ begin
   inherited Create;
   fWeights := aWeights;
   fNest := aNestLocation;
-  SetLength(fAnts, aCount);
+  SetLength(Ants, aCount);
 
   // explicit init ...
-  for var i := 0 to High(fAnts) do
+  for var i := 0 to High(Ants) do
   begin
-    fAnts[i].State := asInNest;
-    fAnts[i].Loc := fNest;
+    Ants[i].State := asInNest;
+    Ants[i].Loc := fNest;
   end;
 end;
 
@@ -110,9 +110,9 @@ var
 begin
   Spawned := 0;
 
-  for i := 0 to High(fAnts) do
+  for i := 0 to High(Ants) do
   begin
-    Ant := @fAnts[i];
+    Ant := @Ants[i];
 
     case Ant.State of
       asInNest:
