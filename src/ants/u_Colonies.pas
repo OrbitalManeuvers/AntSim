@@ -12,29 +12,36 @@ type
 
   TColony = class
   private
-    fNest: TPoint;
-
     fWeights: TColonyWeights;
     fHomeLayer: TPheromoneLayer;
     fFoodLayer: TPheromoneLayer;
     fHomeDeposits: TPheromoneLayer;  // accumulator, zeroed after apply
     fFoodDeposits: TPheromoneLayer;
-
+    fSpawnDelay: Integer;
   public
     Ants: array of TAnt;
+    Nest: TPoint;
     constructor Create(const aWeights: TColonyWeights; const aNestLocation: TPoint; aCount: Integer);
     destructor Destroy; override;
     procedure StepAnts(const aGrid: TCellGrid; const aNotifier: ISimNotifier);
+    procedure ApplyFoodHints(const aGrid: TCellGrid; const aLocations: TList<TPoint>);
+    procedure ApplyNestHint;
     procedure ApplyPheromones;
   end;
 
 const
   SPAWNS_PER_TICK = 3;
-  PHEROMONE_DEPOSIT = 1.0;
-  DECAY_FACTOR = 0.98;         // multiply each cell by this per tick
-  WOBBLE_RANGE = Pi / 6;       // ±30° random wobble
+  PHEROMONE_DEPOSIT = 1.2;
+  DECAY_FACTOR = 0.984;         // multiply each cell by this per tick
+  FOOD_SCENT_FACTOR = 0.7;     // how strongly food radiates into fFoodLayer
+  NEST_SCENT_BASE = 5.0;       // home signal strength at nest center
+  NEST_SCENT_RADIUS = 10;       // how far the nest beacon reaches
+  WOBBLE_MIN = Pi / 8;         // tight wobble when on a strong trail
+  WOBBLE_MAX = Pi / 3;         // wide wobble when no signal (exploratory)
+  SIGNAL_THRESHOLD = 0.5;      // below this, ant is considered "lost"
   SENSE_ANGLE  = Pi / 4;       // ±45° cone for sensing
   SENSE_DIST   = 3;            // how far ahead to sample pheromone
+  DIST_DECAY_RATE = 0.02;      // how quickly home deposit weakens with distance
 
 implementation
 
@@ -46,14 +53,14 @@ constructor TColony.Create(const aWeights: TColonyWeights; const aNestLocation: 
 begin
   inherited Create;
   fWeights := aWeights;
-  fNest := aNestLocation;
+  Nest := aNestLocation;
   SetLength(Ants, aCount);
 
   // explicit init ...
   for var i := 0 to High(Ants) do
   begin
     Ants[i].State := asInNest;
-    Ants[i].Loc := fNest;
+    Ants[i].Loc := Nest;
   end;
 end;
 
@@ -76,7 +83,7 @@ procedure TColony.StepAnts(const aGrid: TCellGrid; const aNotifier: ISimNotifier
     Result := aLayer[ClampGrid(aX), ClampGrid(aY)];
   end;
 
-  function SenseDirection(const aLayer: TPheromoneLayer; const aLoc: TPoint; aAngle: Single): Single;
+  function SenseDirection(const aLayer: TPheromoneLayer; const aLoc: TPoint; aAngle: Single; out aMaxSignal: Single): Single;
   var
     Left, Ahead, Right: Single;
     lx, ly, ax, ay, rx, ry: Integer;
@@ -93,6 +100,8 @@ procedure TColony.StepAnts(const aGrid: TCellGrid; const aNotifier: ISimNotifier
     Left  := SamplePheromone(aLayer, lx, ly);
     Right := SamplePheromone(aLayer, rx, ry);
 
+    aMaxSignal := Max(Ahead, Max(Left, Right));
+
     // bias toward strongest signal
     if (Left > Ahead) and (Left > Right) then
       Result := aAngle - SENSE_ANGLE * 0.5
@@ -107,6 +116,7 @@ var
   Spawned: Integer;
   nx, ny: Integer;
   Ant: ^TAnt;
+  signal, wobble, deposit, dist: Single;
 begin
   Spawned := 0;
 
@@ -117,21 +127,28 @@ begin
     case Ant.State of
       asInNest:
       begin
-        if Spawned < SPAWNS_PER_TICK then
+        if fSpawnDelay = 0 then
         begin
-          Ant.State := asSearching;
-          Ant.Angle := Random * 2 * Pi; // random initial heading
-          Inc(Spawned);
+          if Spawned < SPAWNS_PER_TICK then
+          begin
+            Ant.State := asSearching;
+            Ant.Angle := Random * 2 * Pi; // random initial heading
+            Inc(Spawned);
+          end;
         end;
       end;
 
       asSearching:
       begin
         // sense food pheromone and adjust heading
-        Ant.Angle := SenseDirection(fFoodLayer, Ant.Loc, Ant.Angle);
+        Ant.Angle := SenseDirection(fFoodLayer, Ant.Loc, Ant.Angle, signal);
 
-        // wobble
-        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * WOBBLE_RANGE;
+        // adaptive wobble: wide when lost, tight when on a trail
+        if signal < SIGNAL_THRESHOLD then
+          wobble := WOBBLE_MAX
+        else
+          wobble := WOBBLE_MIN;
+        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble;
 
         // compute next cell
         nx := Ant.Loc.X + Round(Cos(Ant.Angle));
@@ -152,9 +169,11 @@ begin
             Ant.Angle := Ant.Angle - Pi / 2;
         end;
 
-        // deposit home pheromone
+        // deposit home pheromone — stronger near nest, weaker far away
+        dist := Sqrt(Sqr(Ant.Loc.X - Nest.X) + Sqr(Ant.Loc.Y - Nest.Y));
+        deposit := PHEROMONE_DEPOSIT * (1.0 / (1.0 + dist * DIST_DECAY_RATE));
         fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] :=
-          fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] + PHEROMONE_DEPOSIT;
+          fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] + deposit;
 
         // check for food
         if aGrid[Ant.Loc.X, Ant.Loc.Y].FoodAmount > 0 then
@@ -170,10 +189,14 @@ begin
       asReturning:
       begin
         // sense home pheromone and adjust heading
-        Ant.Angle := SenseDirection(fHomeLayer, Ant.Loc, Ant.Angle);
+        Ant.Angle := SenseDirection(fHomeLayer, Ant.Loc, Ant.Angle, signal);
 
-        // wobble
-        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * WOBBLE_RANGE;
+        // adaptive wobble
+        if signal < SIGNAL_THRESHOLD then
+          wobble := WOBBLE_MAX
+        else
+          wobble := WOBBLE_MIN;
+        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble;
 
         // compute next cell
         nx := Ant.Loc.X + Round(Cos(Ant.Angle));
@@ -198,9 +221,9 @@ begin
           fFoodDeposits[Ant.Loc.X, Ant.Loc.Y] + PHEROMONE_DEPOSIT;
 
         // check if at nest
-        if (Abs(Ant.Loc.X - fNest.X) <= 1) and (Abs(Ant.Loc.Y - fNest.Y) <= 1) then
+        if (Abs(Ant.Loc.X - Nest.X) <= 1) and (Abs(Ant.Loc.Y - Nest.Y) <= 1) then
         begin
-          aNotifier.FoodDelivered(fNest);
+          aNotifier.FoodDelivered(Nest);
           Ant.State := asSearching;
           Ant.Angle := Random * 2 * Pi; // head back out in a random direction
         end;
@@ -209,23 +232,97 @@ begin
       end;
     end;
   end;
+
+  if fSpawnDelay > 0 then
+    Dec(fSpawnDelay)
+  else
+    fSpawnDelay := 3;
+end;
+
+procedure TColony.ApplyFoodHints(const aGrid: TCellGrid; const aLocations: TList<TPoint>);
+var
+  p: TPoint;
+  signal: Single;
+begin
+  for p in aLocations do
+  begin
+    signal := aGrid[p.X, p.Y].FoodAmount * FOOD_SCENT_FACTOR;
+    if signal > 0 then
+      fFoodLayer[p.X, p.Y] := fFoodLayer[p.X, p.Y] + signal;
+  end;
+end;
+
+procedure TColony.ApplyNestHint;
+var
+  dx, dy, gx, gy: Integer;
+  dist, signal: Single;
+begin
+  for dy := -NEST_SCENT_RADIUS to NEST_SCENT_RADIUS do
+    for dx := -NEST_SCENT_RADIUS to NEST_SCENT_RADIUS do
+    begin
+      gx := Nest.X + dx;
+      gy := Nest.Y + dy;
+      if (gx < 0) or (gx > High(TGridDimension)) or
+         (gy < 0) or (gy > High(TGridDimension)) then
+        Continue;
+
+      dist := Sqrt(dx * dx + dy * dy);
+      if dist > NEST_SCENT_RADIUS then
+        Continue;
+
+      // linear falloff: full strength at center, zero at edge
+      signal := NEST_SCENT_BASE * (1.0 - dist / NEST_SCENT_RADIUS);
+      fHomeLayer[gx, gy] := fHomeLayer[gx, gy] + signal;
+    end;
 end;
 
 procedure TColony.ApplyPheromones;
 var
   x, y: TGridDimension;
+  nx, ny, dx, dy: Integer;
+  sumHome, sumFood: Single;
+  count: Integer;
+  blurredHome, blurredFood: TPheromoneLayer;
 begin
+  // merge deposits into live layers and decay
   for y := Low(TGridDimension) to High(TGridDimension) do
     for x := Low(TGridDimension) to High(TGridDimension) do
     begin
-      // merge deposits into live layers
       fHomeLayer[x, y] := (fHomeLayer[x, y] + fHomeDeposits[x, y]) * DECAY_FACTOR;
       fFoodLayer[x, y] := (fFoodLayer[x, y] + fFoodDeposits[x, y]) * DECAY_FACTOR;
 
-      // zero accumulators
       fHomeDeposits[x, y] := 0;
       fFoodDeposits[x, y] := 0;
     end;
+
+  // 3x3 box blur (diffusion)
+  for y := Low(TGridDimension) to High(TGridDimension) do
+    for x := Low(TGridDimension) to High(TGridDimension) do
+    begin
+      sumHome := 0;
+      sumFood := 0;
+      count := 0;
+
+      for dy := -1 to 1 do
+        for dx := -1 to 1 do
+        begin
+          nx := x + dx;
+          ny := y + dy;
+          if (nx >= 0) and (nx <= High(TGridDimension)) and
+             (ny >= 0) and (ny <= High(TGridDimension)) then
+          begin
+            sumHome := sumHome + fHomeLayer[nx, ny];
+            sumFood := sumFood + fFoodLayer[nx, ny];
+            Inc(count);
+          end;
+        end;
+
+      blurredHome[x, y] := sumHome / count;
+      blurredFood[x, y] := sumFood / count;
+    end;
+
+  fHomeLayer := blurredHome;
+  fFoodLayer := blurredFood;
 end;
 
 end.

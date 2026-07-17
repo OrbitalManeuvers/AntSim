@@ -72,8 +72,8 @@ procedure TMainForm.CreateNewSession(const aFileName: string);
 begin
 
   var params := Default(TSessionParameters);
-  params.TotalAnts := 10;
-  params.TotalFoodUnits := 400;
+  params.TotalAnts := 500;
+  params.TotalFoodUnits := 10000;
 
   if (aFilename <> '') and TFile.Exists(aFileName) then
   begin

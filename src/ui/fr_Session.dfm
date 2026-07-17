@@ -76,27 +76,69 @@ object SessionFrame: TSessionFrame
       object SimPage: TTabSheet
         ImageIndex = 1
         TabVisible = False
-        object FoodCount: TLabel
-          Left = 120
-          Top = 18
-          Width = 18
+        object lblRemaining: TLabel
+          Left = 416
+          Top = 3
+          Width = 24
           Height = 15
-          Caption = '000'
+          Caption = '0000'
         end
         object Label2: TLabel
-          Left = 11
-          Top = 18
+          Left = 307
+          Top = 3
           Width = 87
           Height = 15
           Caption = 'Food remaining:'
         end
         object Placeholder: TShape
-          Left = 160
+          Left = 8
           Top = 10
           Width = 281
           Height = 33
           Brush.Color = clMedGray
           Pen.Style = psClear
+        end
+        object Label1: TLabel
+          Left = 307
+          Top = 19
+          Width = 68
+          Height = 15
+          Caption = 'Food in nest:'
+        end
+        object Label3: TLabel
+          Left = 307
+          Top = 35
+          Width = 55
+          Height = 15
+          Caption = 'Returning:'
+        end
+        object lblInNest: TLabel
+          Left = 416
+          Top = 19
+          Width = 24
+          Height = 15
+          Caption = '0000'
+        end
+        object lblReturning: TLabel
+          Left = 416
+          Top = 35
+          Width = 24
+          Height = 15
+          Caption = '0000'
+        end
+        object Label4: TLabel
+          Left = 467
+          Top = 3
+          Width = 59
+          Height = 15
+          Caption = 'Total steps:'
+        end
+        object lblTotalSteps: TLabel
+          Left = 536
+          Top = 3
+          Width = 24
+          Height = 15
+          Caption = '0000'
         end
       end
     end

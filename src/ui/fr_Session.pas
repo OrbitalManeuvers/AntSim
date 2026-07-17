@@ -12,6 +12,13 @@ uses System.Generics.Collections, System.Types,
   u_GraphicButtonBars, System.Skia, Vcl.Skia;
 
 type
+  TSessionStats = record
+    RemainingFood: Integer;
+    FoodInNest: Integer;
+    Returning: Integer;
+    TotalSteps: Integer;
+  end;
+
   TSessionFrame = class(TFrame, ISimNotifier)
     ToolPanel: TPanel;
     ToolPages: TPageControl;
@@ -20,11 +27,17 @@ type
     TotalAnts: TLabeledEdit;
     TotalFoodUnits: TLabeledEdit;
     LaunchBtn: TButton;
-    FoodCount: TLabel;
+    lblRemaining: TLabel;
     Label2: TLabel;
     SimTimer: TTimer;
     Placeholder: TShape;
     Arena: TSkPaintBox;
+    Label1: TLabel;
+    Label3: TLabel;
+    lblInNest: TLabel;
+    lblReturning: TLabel;
+    Label4: TLabel;
+    lblTotalSteps: TLabel;
     procedure LaunchBtnClick(Sender: TObject);
     procedure HandleSimTimer(Sender: TObject);
     procedure ArenaDraw(ASender: TObject; const ACanvas: ISkCanvas;
@@ -48,9 +61,13 @@ type
     Zoom: Single;
     UserOffsetX: Single;
     UserOffsetY: Single;
+    Stats: TSessionStats;
     procedure HandleSpeedClick(Sender: TObject);
     procedure UpdateBackgroundImage;
     procedure UpdateAutoPan;
+    procedure GenerateMap;
+    procedure PopulateFoods(aTotalCount: Integer);
+    procedure UpdateStatsDisplay;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -111,6 +128,8 @@ begin
   UserOffsetX := 0;
   UserOffsetY := 0;
   Arena.ControlStyle := Arena.ControlStyle + [csOpaque];
+
+  Stats := Default(TSessionStats);
 end;
 
 destructor TSessionFrame.Destroy;
@@ -130,18 +149,23 @@ end;
 
 procedure TSessionFrame.FoodDelivered(const aNest: TPoint);
 begin
-  //
+  Inc(Stats.FoodInNest);
+  Dec(Stats.Returning);
+  UpdateStatsDisplay;
 end;
 
 procedure TSessionFrame.FoodTaken(const aLoc: TPoint);
 begin
   Dec(Simulator.Grid[aLoc.X, aLoc.Y].FoodAmount);
+  Dec(Stats.RemainingFood);
+  Inc(Stats.Returning);
+  UpdateStatsDisplay;
 end;
 
 procedure TSessionFrame.FrameMouseWheel(Sender: TObject; Shift: TShiftState;
   WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean);
 begin
-  var p := Arena.ParentToClient(MousePos, Arena.Parent);
+  var p := Arena.ScreenToClient(MousePos);
   if Arena.BoundsRect.Contains(p) then
   begin
     if WheelDelta > 0 then
@@ -165,29 +189,11 @@ begin
   ToolPages.ActivePage := SimPage;
   SimSpeed.ItemIndex := 0;
 
-  // create default map
-  for var y := 0 to High(TGridDimension) do
-    for var x := 0 to High(TGridDimension) do
-    begin
-      Simulator.Grid[x, y].Passable := (x > 0) and (x < High(TGridDimension)) and
-        (y > 0) and (y < High(TGridDimension));
-      Simulator.Grid[x, y].FoodAmount := 0;
-    end;
-
-  for var y := 10 to 50 do
-  begin
-    Simulator.Grid[120, y].Passable := False;
-    Simulator.Grid[121, y].Passable := False;
-  end;
+  GenerateMap;
 
   var foodUnits := StrToIntDef(TotalFoodUnits.Text, 10);
-  FoodCount.Caption := foodUnits.ToString;
-
-  // food near corners
-  Simulator.Grid[64, 64].FoodAmount := foodUnits div 4;
-  Simulator.Grid[64, 192].FoodAmount := foodUnits div 4;
-  Simulator.Grid[192, 64].FoodAmount := foodUnits div 4;
-  Simulator.Grid[192, 192].FoodAmount := foodUnits div 4;
+  PopulateFoods(foodUnits);
+  Stats.RemainingFood := foodUnits;
 
   // this will come from the params someday ...
   var weights := Default(TColonyWeights);
@@ -203,7 +209,46 @@ begin
   UpdateBackgroundImage;
   UpdateAutoPan;
 
+  UpdateStatsDisplay;
   Arena.Redraw;
+end;
+
+procedure TSessionFrame.PopulateFoods(aTotalCount: Integer);
+begin
+  if Simulator.FoodCells.Count > 0 then
+  begin
+    var perCell := aTotalCount div Simulator.FoodCells.Count;
+    var remainder := aTotalCount - (perCell * Simulator.FoodCells.Count);
+    for var p in Simulator.FoodCells do
+      Simulator.Grid[p.X, p.Y].FoodAmount := perCell;
+    var p := Simulator.FoodCells.Last;
+    Inc(Simulator.Grid[p.X, p.Y].FoodAmount, remainder);
+  end;
+end;
+
+procedure TSessionFrame.GenerateMap;
+begin
+  // create default map. will come from session parameters/image file eventually
+  for var y := 0 to High(TGridDimension) do
+    for var x := 0 to High(TGridDimension) do
+    begin
+      Simulator.Grid[x, y].Passable := (x > 0) and (x < High(TGridDimension)) and
+        (y > 0) and (y < High(TGridDimension));
+      Simulator.Grid[x, y].FoodAmount := 0;
+    end;
+
+  // test wall
+  for var x := 100 to 200 do
+  begin
+    Simulator.Grid[x, 90].Passable := False;
+//    Simulator.Grid[121, y].Passable := False;
+  end;
+
+  // since food locations will come from the map image, do those here
+  Simulator.FoodCells.Add(Point(64, 64));
+  Simulator.FoodCells.Add(Point(64, 192));
+  Simulator.FoodCells.Add(Point(192, 64));
+  Simulator.FoodCells.Add(Point(192, 192));
 end;
 
 procedure TSessionFrame.UpdateAutoPan;
@@ -229,7 +274,7 @@ begin
     for var x := 0 to 255 do
     begin
       if Simulator.Grid[x, y].Passable then
-        Paint.Color := TAlphaColors.Saddlebrown   // or whatever ground color
+        Paint.Color := TAlphaColors.Moccasin   // or whatever ground color
       else
         Paint.Color := TAlphaColors.Black;  // walls
 
@@ -239,12 +284,30 @@ begin
   BackgroundImage := Surface.MakeImageSnapshot;
 end;
 
+procedure TSessionFrame.UpdateStatsDisplay;
+begin
+  if Stats.TotalSteps mod 5 = 0 then
+  begin
+    lblRemaining.Caption := Stats.RemainingFood.ToString;
+    lblInNest.Caption := Stats.FoodInNest.ToString;
+    lblReturning.Caption := Stats.Returning.ToString;
+  end;
+
+  if Stats.TotalSteps mod 50 = 0 then
+    lblTotalSteps.Caption := Stats.TotalSteps.ToString;
+
+end;
+
 procedure TSessionFrame.HandleSimTimer(Sender: TObject);
 begin
   for var step := 0 to StepsPerTick - 1 do
+  begin
     Simulator.Step;
+    Inc(Stats.TotalSteps);
+  end;
 
   Arena.Redraw;
+  UpdateStatsDisplay;
 end;
 
 procedure TSessionFrame.HandleSpeedClick(Sender: TObject);
@@ -269,11 +332,29 @@ begin
   if Assigned(BackgroundImage) then
     ACanvas.DrawImage(BackgroundImage, 0, 0);
 
-  // Draw ants
   Paint := TSkPaint.Create;
   Paint.Style := TSkPaintStyle.Fill;
   Paint.AntiAlias := True;
 
+  // Draw food locations
+  Paint.Color := TAlphaColors.Orange;
+  for var p in Simulator.FoodCells do
+  begin
+    if Simulator.Grid[p.X, p.Y].FoodAmount > 0 then
+      ACanvas.DrawCircle(p.X, p.Y, 1.0, Paint);
+  end;
+
+  // draw nests
+  Paint.Color := TAlphaColors.Red;
+  Paint.Style := TSkPaintStyle.Stroke;
+  for Colony in Colonies do
+  begin
+    var p := Colony.Nest;
+    ACanvas.DrawCircle(p.X, p.Y, 1.0, Paint);
+  end;
+
+  Paint.Style := TSkPaintStyle.Fill;
+  // Draw ants
   for Colony in Colonies do
   begin
     for i := 0 to High(Colony.Ants) do
@@ -283,9 +364,9 @@ begin
         Continue;
 
       if Ant.State = asSearching then
-        Paint.Color := TAlphaColors.Yellow
+        Paint.Color := TAlphaColors.Black
       else
-        Paint.Color := TAlphaColors.Lime;
+        Paint.Color := TAlphaColors.Limegreen;
 
       ACanvas.DrawCircle(Ant.Loc.X + 0.5, Ant.Loc.Y + 0.5, 0.45, Paint);
     end;

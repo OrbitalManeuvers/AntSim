@@ -2,7 +2,7 @@ object MainForm: TMainForm
   Left = 0
   Top = 0
   Caption = 'AntSim'
-  ClientHeight = 644
+  ClientHeight = 963
   ClientWidth = 1066
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
