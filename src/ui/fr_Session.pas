@@ -9,7 +9,7 @@ uses System.Generics.Collections, System.Types,
 
   u_SimTypes,
   u_SessionParameters, u_SimController, u_Simulator, u_Colonies,
-  u_GraphicButtonBars, System.Skia, Vcl.Skia;
+  u_GraphicButtonBars, System.Skia, Vcl.Skia, Vcl.CheckLst, Vcl.Buttons;
 
 type
   TSessionStats = record
@@ -18,6 +18,9 @@ type
     Returning: Integer;
     TotalSteps: Integer;
   end;
+
+  TDisplayLayer = (dlAnts, dlFood, dlNests, dlSearching, dlReturning);
+  TDisplayLayers = set of TDisplayLayer;
 
   TSessionFrame = class(TFrame, ISimNotifier)
     ToolPanel: TPanel;
@@ -38,6 +41,8 @@ type
     lblReturning: TLabel;
     Label4: TLabel;
     lblTotalSteps: TLabel;
+    DisplayLayers: TCheckListBox;
+    DebugBtn: TSpeedButton;
     procedure LaunchBtnClick(Sender: TObject);
     procedure HandleSimTimer(Sender: TObject);
     procedure ArenaDraw(ASender: TObject; const ACanvas: ISkCanvas;
@@ -45,10 +50,13 @@ type
     procedure ArenaResize(Sender: TObject);
     procedure FrameMouseWheel(Sender: TObject; Shift: TShiftState;
       WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean);
+    procedure DisplayLayersClickCheck(Sender: TObject);
+    procedure DebugBtnClick(Sender: TObject);
   private
     { ISimNotifier }
     procedure FoodTaken(const aLoc: TPoint);
     procedure FoodDelivered(const aNest: TPoint);
+    procedure FoodDropped(const aLoc: TPoint);
   private
     Colonies: TObjectList<TColony>;
     Controller: TSimController;
@@ -62,6 +70,7 @@ type
     UserOffsetX: Single;
     UserOffsetY: Single;
     Stats: TSessionStats;
+    Layers: TDisplayLayers;
     procedure HandleSpeedClick(Sender: TObject);
     procedure UpdateBackgroundImage;
     procedure UpdateAutoPan;
@@ -78,7 +87,8 @@ implementation
 
 {$R *.dfm}
 
-uses System.UITypes, u_Ants;
+uses System.UITypes, System.Math,
+  u_Ants;
 
 type
   TSpeedEntry = record
@@ -130,6 +140,50 @@ begin
   Arena.ControlStyle := Arena.ControlStyle + [csOpaque];
 
   Stats := Default(TSessionStats);
+  Layers := [dlAnts, dlFood, dlNests];
+  for var layer := Low(TDisplayLayer) to High(TDisplayLayer) do
+  begin
+    if layer in Layers then
+      DisplayLayers.Checked[Ord(layer)] := True;
+  end;
+end;
+
+procedure TSessionFrame.DebugBtnClick(Sender: TObject);
+begin
+  // pause the sim
+  var wasRunning := SimTimer.Enabled;
+  try
+    SimTimer.Enabled := False;
+
+    var c := Colonies.First;
+    if not Assigned(c) then
+      Exit;
+
+    var lines := TStringList.Create(dupIgnore, False, False);
+    try
+      for var i := 0 to High(c.Ants) do
+        if c.Ants[i].State = asReturning then
+        begin
+          lines.Add(Format('#%.03d  L:%d,%d  A:%d PU: %d', [
+            i,
+            c.Ants[i].Loc.X,
+            c.Ants[i].Loc.Y,
+            c.Ants[i].TicksAlive,
+            c.Ants[i].TicksSincePickup
+            ]));
+        end;
+
+        ShowMessage(lines.text);
+
+    finally
+      lines.Free;
+    end;
+
+
+  finally
+    if wasRunning then
+      SimTimer.Enabled := True;
+  end;
 end;
 
 destructor TSessionFrame.Destroy;
@@ -138,6 +192,20 @@ begin
   Simulator.Free;
   Colonies.Free;
   inherited;
+end;
+
+procedure TSessionFrame.DisplayLayersClickCheck(Sender: TObject);
+begin
+  Layers := [];
+  for var layer := Low(TDisplayLayer) to High(TDisplayLayer) do
+    if DisplayLayers.Checked[Ord(layer)] then
+    begin
+      Include(Layers, layer);
+    end;
+
+  // if we're already running, just wait for the next draw cycle
+  if not Self.SimTimer.Enabled then
+    Arena.Redraw;
 end;
 
 procedure TSessionFrame.CreateSession(const Params: TSessionParameters);
@@ -150,6 +218,12 @@ end;
 procedure TSessionFrame.FoodDelivered(const aNest: TPoint);
 begin
   Inc(Stats.FoodInNest);
+  Dec(Stats.Returning);
+  UpdateStatsDisplay;
+end;
+
+procedure TSessionFrame.FoodDropped(const aLoc: TPoint);
+begin
   Dec(Stats.Returning);
   UpdateStatsDisplay;
 end;
@@ -237,18 +311,31 @@ begin
       Simulator.Grid[x, y].FoodAmount := 0;
     end;
 
-  // test wall
-  for var x := 100 to 200 do
-  begin
-    Simulator.Grid[x, 90].Passable := False;
-//    Simulator.Grid[121, y].Passable := False;
-  end;
+  // test terrain
+  for var x := 80 to 84 do
+    for var y := 80 to 84 do
+      Simulator.Grid[x, y].Passable := False;
 
-  // since food locations will come from the map image, do those here
-  Simulator.FoodCells.Add(Point(64, 64));
+  for var x := 80 to 84 do
+    for var y := 120 to 123 do
+      Simulator.Grid[x, y].Passable := False;
+
+
+
+  // identify food locations
+  Simulator.FoodCells.Add(Point(95, 60));
+  Simulator.FoodCells.Add(Point(80, 64));
+  Simulator.FoodCells.Add(Point(100, 80));
+
+  Simulator.FoodCells.Add(Point(64, 80));
+  Simulator.FoodCells.Add(Point(64, 100));
+  Simulator.FoodCells.Add(Point(64, 150));
   Simulator.FoodCells.Add(Point(64, 192));
-  Simulator.FoodCells.Add(Point(192, 64));
-  Simulator.FoodCells.Add(Point(192, 192));
+
+  Simulator.FoodCells.Add(Point(182, 64));
+  Simulator.FoodCells.Add(Point(192, 94));
+  Simulator.FoodCells.Add(Point(162, 104));
+  Simulator.FoodCells.Add(Point(102, 142));
 end;
 
 procedure TSessionFrame.UpdateAutoPan;
@@ -257,7 +344,7 @@ begin
   PanY := Arena.Height / 2 - (128 + UserOffsetY) * Zoom;
 end;
 
-// One-time setup (after grid is built, or when terrain changes)
+// after grid is built, or when terrain changes
 procedure TSessionFrame.UpdateBackgroundImage;
 var
   Surface: ISkSurface;
@@ -274,9 +361,9 @@ begin
     for var x := 0 to 255 do
     begin
       if Simulator.Grid[x, y].Passable then
-        Paint.Color := TAlphaColors.Moccasin   // or whatever ground color
+        Paint.Color := TAlphaColors.Black   // or whatever ground color
       else
-        Paint.Color := TAlphaColors.Black;  // walls
+        Paint.Color := TAlphaColors.Darkslateblue;  // walls
 
       Canvas.DrawPoint(x, y, Paint);
     end;
@@ -292,10 +379,8 @@ begin
     lblInNest.Caption := Stats.FoodInNest.ToString;
     lblReturning.Caption := Stats.Returning.ToString;
   end;
-
   if Stats.TotalSteps mod 50 = 0 then
     lblTotalSteps.Caption := Stats.TotalSteps.ToString;
-
 end;
 
 procedure TSessionFrame.HandleSimTimer(Sender: TObject);
@@ -323,6 +408,50 @@ var
   Colony: TColony;
   i: Integer;
   Ant: TAnt;
+
+  procedure DrawPheromoneLayer(const aLayer: TPheromoneLayer; aColor: Cardinal);
+  var
+    Surface: ISkSurface;
+    LayerCanvas: ISkCanvas;
+    LayerPaint: ISkPaint;
+    maxVal: Single;
+    alpha: Byte;
+    x, y: Integer;
+  begin
+    // find max value for normalization
+    maxVal := 0;
+    for y := 0 to High(TGridDimension) do
+      for x := 0 to High(TGridDimension) do
+        if aLayer[x, y] > maxVal then
+          maxVal := aLayer[x, y];
+
+    if maxVal > 3 then
+      maxVal := 3;
+
+    if maxVal < 0.01 then
+      Exit; // nothing to draw
+
+    Surface := TSkSurface.MakeRaster(GRID_EXTENT, GRID_EXTENT);
+    LayerCanvas := Surface.Canvas;
+    LayerCanvas.Clear(TAlphaColors.Null);
+
+    LayerPaint := TSkPaint.Create;
+    LayerPaint.Style := TSkPaintStyle.Fill;
+
+    for y := 0 to High(TGridDimension) do
+      for x := 0 to High(TGridDimension) do
+      begin
+        if aLayer[x, y] > 0.01 then
+        begin
+          alpha := Round(Min(aLayer[x, y] / maxVal, 1.0) * 180);
+          LayerPaint.Color := (Cardinal(alpha) shl 24) or (aColor and $00FFFFFF);
+          LayerCanvas.DrawPoint(x, y, LayerPaint);
+        end;
+      end;
+
+    ACanvas.DrawImage(Surface.MakeImageSnapshot, 0, 0);
+  end;
+
 begin
   // Apply pan/zoom transforms
   ACanvas.Translate(PanX, PanY);
@@ -332,45 +461,64 @@ begin
   if Assigned(BackgroundImage) then
     ACanvas.DrawImage(BackgroundImage, 0, 0);
 
+  // Draw pheromone layers
+  for Colony in Colonies do
+  begin
+    if dlSearching in Self.Layers then
+      DrawPheromoneLayer(Colony.FoodLayer, TAlphaColors.Orange);
+    if dlReturning in Self.Layers then
+      DrawPheromoneLayer(Colony.HomeLayer, TAlphaColors.Lightseagreen);
+  end;
+
   Paint := TSkPaint.Create;
   Paint.Style := TSkPaintStyle.Fill;
   Paint.AntiAlias := True;
 
   // Draw food locations
-  Paint.Color := TAlphaColors.Orange;
-  for var p in Simulator.FoodCells do
+  if dlFood in Self.Layers then
   begin
-    if Simulator.Grid[p.X, p.Y].FoodAmount > 0 then
-      ACanvas.DrawCircle(p.X, p.Y, 1.0, Paint);
+    Paint.Color := TAlphaColors.Orange;
+    for var p in Simulator.FoodCells do
+    begin
+      if Simulator.Grid[p.X, p.Y].FoodAmount > 0 then
+        ACanvas.DrawCircle(p.X, p.Y, 1.0, Paint);
+    end;
   end;
 
   // draw nests
-  Paint.Color := TAlphaColors.Red;
-  Paint.Style := TSkPaintStyle.Stroke;
-  for Colony in Colonies do
+  if dlNests in Self.Layers then
   begin
-    var p := Colony.Nest;
-    ACanvas.DrawCircle(p.X, p.Y, 1.0, Paint);
-  end;
-
-  Paint.Style := TSkPaintStyle.Fill;
-  // Draw ants
-  for Colony in Colonies do
-  begin
-    for i := 0 to High(Colony.Ants) do
+    Paint.Color := TAlphaColors.Red;
+    Paint.Style := TSkPaintStyle.Stroke;
+    for Colony in Colonies do
     begin
-      Ant := Colony.Ants[i];
-      if Ant.State = asInNest then
-        Continue;
-
-      if Ant.State = asSearching then
-        Paint.Color := TAlphaColors.Black
-      else
-        Paint.Color := TAlphaColors.Limegreen;
-
-      ACanvas.DrawCircle(Ant.Loc.X + 0.5, Ant.Loc.Y + 0.5, 0.45, Paint);
+      var p := Colony.Nest;
+      ACanvas.DrawCircle(p.X, p.Y, 1.0, Paint);
     end;
   end;
+
+  if dlAnts in Self.Layers then
+  begin
+    Paint.Style := TSkPaintStyle.Fill;
+    // Draw ants
+    for Colony in Colonies do
+    begin
+      for i := 0 to High(Colony.Ants) do
+      begin
+        Ant := Colony.Ants[i];
+        if Ant.State = asInNest then
+          Continue;
+
+        if Ant.State = asSearching then
+          Paint.Color := TAlphaColors.Lightsteelblue
+        else
+          Paint.Color := TAlphaColors.Limegreen;
+
+        ACanvas.DrawCircle(Ant.Loc.X + 0.5, Ant.Loc.Y + 0.5, 0.45, Paint);
+      end;
+    end;
+  end;
+
 end;
 
 procedure TSessionFrame.ArenaResize(Sender: TObject);

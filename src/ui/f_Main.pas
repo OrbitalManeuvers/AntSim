@@ -42,7 +42,7 @@ uses System.IOUtils;
 { TMainForm }
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
-  //
+//  RandSeed := 42;
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
@@ -73,7 +73,7 @@ begin
 
   var params := Default(TSessionParameters);
   params.TotalAnts := 500;
-  params.TotalFoodUnits := 10000;
+  params.TotalFoodUnits := 20000;
 
   if (aFilename <> '') and TFile.Exists(aFileName) then
   begin

@@ -1,7 +1,7 @@
 object SessionFrame: TSessionFrame
   Left = 0
   Top = 0
-  Width = 801
+  Width = 890
   Height = 618
   DoubleBuffered = True
   ParentDoubleBuffered = False
@@ -9,9 +9,9 @@ object SessionFrame: TSessionFrame
   OnMouseWheel = FrameMouseWheel
   object Arena: TSkPaintBox
     Left = 0
-    Top = 72
-    Width = 801
-    Height = 546
+    Top = 92
+    Width = 890
+    Height = 526
     Align = alClient
     OnResize = ArenaResize
     OnDraw = ArenaDraw
@@ -24,21 +24,19 @@ object SessionFrame: TSessionFrame
     AlignWithMargins = True
     Left = 3
     Top = 3
-    Width = 795
-    Height = 66
+    Width = 884
+    Height = 86
     Align = alTop
     ShowCaption = False
     TabOrder = 0
-    ExplicitWidth = 634
     object ToolPages: TPageControl
       Left = 1
       Top = 1
-      Width = 793
-      Height = 64
+      Width = 882
+      Height = 84
       ActivePage = SimPage
       Align = alClient
       TabOrder = 0
-      ExplicitWidth = 632
       object SetupPage: TTabSheet
         TabVisible = False
         object TotalAnts: TLabeledEdit
@@ -139,6 +137,30 @@ object SessionFrame: TSessionFrame
           Width = 24
           Height = 15
           Caption = '0000'
+        end
+        object DebugBtn: TSpeedButton
+          Left = 816
+          Top = 16
+          Width = 49
+          Height = 22
+          Caption = 'Debug'
+          OnClick = DebugBtnClick
+        end
+        object DisplayLayers: TCheckListBox
+          Left = 582
+          Top = 3
+          Width = 219
+          Height = 63
+          Columns = 2
+          ItemHeight = 17
+          Items.Strings = (
+            'Ants'
+            'Food'
+            'Nests'
+            'Searching'
+            'Returning')
+          TabOrder = 0
+          OnClickCheck = DisplayLayersClickCheck
         end
       end
     end

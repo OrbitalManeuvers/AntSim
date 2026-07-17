@@ -13,14 +13,14 @@ type
   TColony = class
   private
     fWeights: TColonyWeights;
-    fHomeLayer: TPheromoneLayer;
-    fFoodLayer: TPheromoneLayer;
     fHomeDeposits: TPheromoneLayer;  // accumulator, zeroed after apply
     fFoodDeposits: TPheromoneLayer;
     fSpawnDelay: Integer;
   public
     Ants: array of TAnt;
     Nest: TPoint;
+    HomeLayer: TPheromoneLayer;
+    FoodLayer: TPheromoneLayer;
     constructor Create(const aWeights: TColonyWeights; const aNestLocation: TPoint; aCount: Integer);
     destructor Destroy; override;
     procedure StepAnts(const aGrid: TCellGrid; const aNotifier: ISimNotifier);
@@ -32,16 +32,17 @@ type
 const
   SPAWNS_PER_TICK = 3;
   PHEROMONE_DEPOSIT = 1.2;
-  DECAY_FACTOR = 0.984;         // multiply each cell by this per tick
+  DECAY_FACTOR = 0.985;         // multiply each cell by this per tick
   FOOD_SCENT_FACTOR = 0.7;     // how strongly food radiates into fFoodLayer
-  NEST_SCENT_BASE = 5.0;       // home signal strength at nest center
-  NEST_SCENT_RADIUS = 10;       // how far the nest beacon reaches
+  NEST_SCENT_BASE = 8.0;       // home signal strength at nest center
+  NEST_SCENT_RADIUS = 50;      // how far the nest beacon reaches
   WOBBLE_MIN = Pi / 8;         // tight wobble when on a strong trail
   WOBBLE_MAX = Pi / 3;         // wide wobble when no signal (exploratory)
   SIGNAL_THRESHOLD = 0.5;      // below this, ant is considered "lost"
   SENSE_ANGLE  = Pi / 4;       // ±45° cone for sensing
   SENSE_DIST   = 3;            // how far ahead to sample pheromone
   DIST_DECAY_RATE = 0.02;      // how quickly home deposit weakens with distance
+  GIVE_UP_TICKS = 200;         // returning ant drops food and resumes searching
 
 implementation
 
@@ -141,13 +142,14 @@ begin
       asSearching:
       begin
         // sense food pheromone and adjust heading
-        Ant.Angle := SenseDirection(fFoodLayer, Ant.Loc, Ant.Angle, signal);
+        Ant.Angle := SenseDirection(FoodLayer, Ant.Loc, Ant.Angle, signal);
 
         // adaptive wobble: wide when lost, tight when on a trail
         if signal < SIGNAL_THRESHOLD then
           wobble := WOBBLE_MAX
         else
           wobble := WOBBLE_MIN;
+
         Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble;
 
         // compute next cell
@@ -169,17 +171,16 @@ begin
             Ant.Angle := Ant.Angle - Pi / 2;
         end;
 
-        // deposit home pheromone — stronger near nest, weaker far away
-        dist := Sqrt(Sqr(Ant.Loc.X - Nest.X) + Sqr(Ant.Loc.Y - Nest.Y));
-        deposit := PHEROMONE_DEPOSIT * (1.0 / (1.0 + dist * DIST_DECAY_RATE));
+        // deposit home pheromone
         fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] :=
-          fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] + deposit;
+          fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] + PHEROMONE_DEPOSIT;
 
         // check for food
         if aGrid[Ant.Loc.X, Ant.Loc.Y].FoodAmount > 0 then
         begin
           aNotifier.FoodTaken(Ant.Loc);
           Ant.State := asReturning;
+          Ant.TicksSincePickup := 0;
           Ant.Angle := Ant.Angle + Pi; // turn around
         end;
 
@@ -189,7 +190,7 @@ begin
       asReturning:
       begin
         // sense home pheromone and adjust heading
-        Ant.Angle := SenseDirection(fHomeLayer, Ant.Loc, Ant.Angle, signal);
+        Ant.Angle := SenseDirection(HomeLayer, Ant.Loc, Ant.Angle, signal);
 
         // adaptive wobble
         if signal < SIGNAL_THRESHOLD then
@@ -216,9 +217,12 @@ begin
             Ant.Angle := Ant.Angle - Pi / 2;
         end;
 
-        // deposit food pheromone
+        // deposit food pheromone — fades with time since pickup
+        deposit := PHEROMONE_DEPOSIT * (1.0 / (1.0 + Ant.TicksSincePickup * DIST_DECAY_RATE));
         fFoodDeposits[Ant.Loc.X, Ant.Loc.Y] :=
-          fFoodDeposits[Ant.Loc.X, Ant.Loc.Y] + PHEROMONE_DEPOSIT;
+          fFoodDeposits[Ant.Loc.X, Ant.Loc.Y] + deposit;
+
+        Inc(Ant.TicksSincePickup);
 
         // check if at nest
         if (Abs(Ant.Loc.X - Nest.X) <= 1) and (Abs(Ant.Loc.Y - Nest.Y) <= 1) then
@@ -226,6 +230,13 @@ begin
           aNotifier.FoodDelivered(Nest);
           Ant.State := asSearching;
           Ant.Angle := Random * 2 * Pi; // head back out in a random direction
+        end
+        // give up if lost too long — drop food, resume searching
+        else if Ant.TicksSincePickup > GIVE_UP_TICKS then
+        begin
+          aNotifier.FoodDropped(Ant.Loc);
+          Ant.State := asSearching;
+          Ant.Angle := Random * 2 * Pi;
         end;
 
         Inc(Ant.TicksAlive);
@@ -236,7 +247,7 @@ begin
   if fSpawnDelay > 0 then
     Dec(fSpawnDelay)
   else
-    fSpawnDelay := 3;
+    fSpawnDelay := 10;
 end;
 
 procedure TColony.ApplyFoodHints(const aGrid: TCellGrid; const aLocations: TList<TPoint>);
@@ -248,7 +259,7 @@ begin
   begin
     signal := aGrid[p.X, p.Y].FoodAmount * FOOD_SCENT_FACTOR;
     if signal > 0 then
-      fFoodLayer[p.X, p.Y] := fFoodLayer[p.X, p.Y] + signal;
+      FoodLayer[p.X, p.Y] := FoodLayer[p.X, p.Y] + signal;
   end;
 end;
 
@@ -272,7 +283,7 @@ begin
 
       // linear falloff: full strength at center, zero at edge
       signal := NEST_SCENT_BASE * (1.0 - dist / NEST_SCENT_RADIUS);
-      fHomeLayer[gx, gy] := fHomeLayer[gx, gy] + signal;
+      HomeLayer[gx, gy] := HomeLayer[gx, gy] + signal;
     end;
 end;
 
@@ -288,8 +299,8 @@ begin
   for y := Low(TGridDimension) to High(TGridDimension) do
     for x := Low(TGridDimension) to High(TGridDimension) do
     begin
-      fHomeLayer[x, y] := (fHomeLayer[x, y] + fHomeDeposits[x, y]) * DECAY_FACTOR;
-      fFoodLayer[x, y] := (fFoodLayer[x, y] + fFoodDeposits[x, y]) * DECAY_FACTOR;
+      HomeLayer[x, y] := (HomeLayer[x, y] + fHomeDeposits[x, y]) * DECAY_FACTOR;
+      FoodLayer[x, y] := (FoodLayer[x, y] + fFoodDeposits[x, y]) * DECAY_FACTOR;
 
       fHomeDeposits[x, y] := 0;
       fFoodDeposits[x, y] := 0;
@@ -311,8 +322,8 @@ begin
           if (nx >= 0) and (nx <= High(TGridDimension)) and
              (ny >= 0) and (ny <= High(TGridDimension)) then
           begin
-            sumHome := sumHome + fHomeLayer[nx, ny];
-            sumFood := sumFood + fFoodLayer[nx, ny];
+            sumHome := sumHome + HomeLayer[nx, ny];
+            sumFood := sumFood + FoodLayer[nx, ny];
             Inc(count);
           end;
         end;
@@ -321,8 +332,8 @@ begin
       blurredFood[x, y] := sumFood / count;
     end;
 
-  fHomeLayer := blurredHome;
-  fFoodLayer := blurredFood;
+  HomeLayer := blurredHome;
+  FoodLayer := blurredFood;
 end;
 
 end.
