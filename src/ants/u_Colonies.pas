@@ -43,6 +43,7 @@ const
   SENSE_DIST   = 3;            // how far ahead to sample pheromone
   DIST_DECAY_RATE = 0.02;      // how quickly home deposit weakens with distance
   GIVE_UP_TICKS = 200;         // returning ant drops food and resumes searching
+  COOLDOWN_DURATION = 50;      // ticks of food-repulsion after giving up
 
 implementation
 
@@ -145,11 +146,21 @@ begin
         // sense food pheromone and adjust heading
         Ant.Angle := SenseDirection(FoodLayer, Ant.Loc, Ant.Angle, signal);
 
-        // adaptive wobble: wide when lost, tight when on a trail
-        if signal < SIGNAL_THRESHOLD then
-          wobble := WOBBLE_MAX
+        // if on cooldown, invert direction (flee from food)
+        if Ant.CooldownTicks > 0 then
+        begin
+          Ant.Angle := Ant.Angle + Pi;  // turn away from food signal
+          wobble := WOBBLE_MAX;
+          Dec(Ant.CooldownTicks);
+        end
         else
-          wobble := WOBBLE_MIN;
+        begin
+          // adaptive wobble: wide when lost, tight when on a trail
+          if signal < SIGNAL_THRESHOLD then
+            wobble := WOBBLE_MAX
+          else
+            wobble := WOBBLE_MIN;
+        end;
 
         Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble * Ant.WobbleFactor;
 
@@ -176,8 +187,8 @@ begin
         fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] :=
           fHomeDeposits[Ant.Loc.X, Ant.Loc.Y] + PHEROMONE_DEPOSIT;
 
-        // check for food
-        if aGrid[Ant.Loc.X, Ant.Loc.Y].FoodAmount > 0 then
+        // check for food (skip if on cooldown)
+        if (Ant.CooldownTicks = 0) and (aGrid[Ant.Loc.X, Ant.Loc.Y].FoodAmount > 0) then
         begin
           aNotifier.FoodTaken(Ant.Loc);
           Ant.State := asReturning;
@@ -232,11 +243,12 @@ begin
           Ant.State := asSearching;
           Ant.Angle := Random * 2 * Pi; // head back out in a random direction
         end
-        // give up if lost too long — drop food, resume searching
-        else if Ant.TicksSincePickup > GIVE_UP_TICKS then
+        // give up if lost too long AND no home signal — drop food, resume searching
+        else if (Ant.TicksSincePickup > GIVE_UP_TICKS) and (signal < SIGNAL_THRESHOLD) then
         begin
           aNotifier.FoodDropped(Ant.Loc);
           Ant.State := asSearching;
+          Ant.CooldownTicks := COOLDOWN_DURATION;
           Ant.Angle := Random * 2 * Pi;
         end;
 

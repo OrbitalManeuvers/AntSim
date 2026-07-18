@@ -34,6 +34,8 @@ type
       ARect: TRect; AState: TOwnerDrawState);
     procedure btnBrowseClick(Sender: TObject);
     procedure SessionListItemClick(Sender: TObject);
+    procedure edtAntsChange(Sender: TObject);
+    procedure edtFoodChange(Sender: TObject);
   private
     fLibrary: TSessionLibrary;
     procedure UpdateControls;
@@ -55,6 +57,26 @@ end;
 procedure TSessionManager.btnLaunchClick(Sender: TObject);
 begin
   //
+end;
+
+procedure TSessionManager.edtAntsChange(Sender: TObject);
+begin
+  if SessionList.ItemIndex <> -1 then
+  begin
+    var value := StrToIntDef(edtAnts.Text, -1);
+    if value <> -1 then
+      fLibrary.Sessions[SessionList.ItemIndex].Ants := Value;
+  end;
+end;
+
+procedure TSessionManager.edtFoodChange(Sender: TObject);
+begin
+  if SessionList.ItemIndex <> -1 then
+  begin
+    var value := StrToIntDef(edtFood.Text, -1);
+    if value <> -1 then
+      fLibrary.Sessions[SessionList.ItemIndex].Food := Value;
+  end;
 end;
 
 procedure TSessionManager.SessionListBeforeDrawItem(AIndex: Integer;

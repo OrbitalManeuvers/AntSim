@@ -141,6 +141,7 @@ object SessionManager: TSessionManager
     NumbersOnly = True
     TabOrder = 4
     Text = '600'
+    OnChange = edtAntsChange
   end
   object edtFood: TEdit
     Left = 368
@@ -150,6 +151,7 @@ object SessionManager: TSessionManager
     NumbersOnly = True
     TabOrder = 5
     Text = '60000'
+    OnChange = edtFoodChange
   end
   object btnLaunch: TButton
     Left = 480
@@ -168,7 +170,7 @@ object SessionManager: TSessionManager
     Width = 75
     Height = 26
     Cancel = True
-    Caption = 'Cancel'
+    Caption = 'Close'
     ModalResult = 2
     TabOrder = 7
   end

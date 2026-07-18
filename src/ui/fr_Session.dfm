@@ -24,6 +24,11 @@ object SessionFrame: TSessionFrame
     Margins.Right = 4
     Margins.Bottom = 4
     Align = alClient
+    OnMouseDown = ArenaMouseDown
+    OnMouseEnter = ArenaMouseEnter
+    OnMouseLeave = ArenaMouseLeave
+    OnMouseMove = ArenaMouseMove
+    OnMouseUp = ArenaMouseUp
     OnResize = ArenaResize
     OnDraw = ArenaDraw
     ExplicitLeft = 56
@@ -106,13 +111,13 @@ object SessionFrame: TSessionFrame
     object lblStats: TLabel
       Left = 8
       Top = 8
-      Width = 37
+      Width = 39
       Height = 25
       Caption = 'Stats'
       Font.Charset = DEFAULT_CHARSET
       Font.Color = clViolet
       Font.Height = -19
-      Font.Name = 'Segoe UI Light'
+      Font.Name = 'Segoe UI'
       Font.Style = []
       ParentFont = False
       StyleElements = [seClient, seBorder]
@@ -129,13 +134,13 @@ object SessionFrame: TSessionFrame
     object lblRun: TLabel
       Left = 8
       Top = 145
-      Width = 31
+      Width = 33
       Height = 25
       Caption = 'Run'
       Font.Charset = DEFAULT_CHARSET
       Font.Color = clViolet
       Font.Height = -19
-      Font.Name = 'Segoe UI Light'
+      Font.Name = 'Segoe UI'
       Font.Style = []
       ParentFont = False
       StyleElements = [seClient, seBorder]
@@ -160,13 +165,13 @@ object SessionFrame: TSessionFrame
     object lblView: TLabel
       Left = 8
       Top = 225
-      Width = 38
+      Width = 41
       Height = 25
       Caption = 'View'
       Font.Charset = DEFAULT_CHARSET
       Font.Color = clViolet
       Font.Height = -19
-      Font.Name = 'Segoe UI Light'
+      Font.Name = 'Segoe UI'
       Font.Style = []
       ParentFont = False
       StyleElements = [seClient, seBorder]
@@ -194,13 +199,13 @@ object SessionFrame: TSessionFrame
     object lblEdit: TLabel
       Left = 8
       Top = 401
-      Width = 31
+      Width = 32
       Height = 25
       Caption = 'Edit'
       Font.Charset = DEFAULT_CHARSET
       Font.Color = clViolet
       Font.Height = -19
-      Font.Name = 'Segoe UI Light'
+      Font.Name = 'Segoe UI'
       Font.Style = []
       ParentFont = False
       StyleElements = [seClient, seBorder]

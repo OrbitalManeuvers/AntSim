@@ -23,7 +23,7 @@ type
   TDisplayLayer = (dlAnts, dlFood, dlNests, dlSearching, dlReturning);
   TDisplayLayers = set of TDisplayLayer;
 
-  TZoomLevel = 1..10;
+  TZoomLevel = 1..15;
 
   TToolType = (ttPan, ttDropFood, ttDropBlock, ttDraw, ttErase);
 
@@ -63,12 +63,19 @@ type
     procedure ArenaDraw(ASender: TObject; const ACanvas: ISkCanvas;
       const ADest: TRectF; const AOpacity: Single);
     procedure ArenaResize(Sender: TObject);
+    procedure ArenaMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure ArenaMouseEnter(Sender: TObject);
+    procedure ArenaMouseLeave(Sender: TObject);
     procedure FrameMouseWheel(Sender: TObject; Shift: TShiftState;
       WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean);
     procedure DisplayLayersClickCheck(Sender: TObject);
     procedure DebugBtnClick(Sender: TObject);
     procedure tbZoomChange(Sender: TObject);
     procedure ToolClick(Sender: TObject);
+    procedure ArenaMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure ArenaMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
   private
     { ISimNotifier }
     procedure FoodTaken(const aLoc: TPoint);
@@ -92,9 +99,15 @@ type
     Stats: TSessionStats;
     Layers: TDisplayLayers;
     ZoomLocked: Boolean;
+    ActiveTool: TToolType;
+    WorldMouseX: Single;
+    WorldMouseY: Single;
+    MouseInArena: Boolean;
+    MouseIsDown: Boolean;
     procedure HandleSpeedClick(Sender: TObject);
     procedure HandleTargetLayerClick(Sender: TObject);
     procedure HandleBlockSizeClick(Sender: TObject);
+    procedure ApplyBrush(aGridX, aGridY: Integer);
     procedure UpdateBackgroundImage;
     procedure UpdateAutoPan;
     procedure GenerateMap;
@@ -102,6 +115,7 @@ type
     procedure UpdateStatsDisplay;
     procedure SelectTool(aTool: TToolType);
     procedure SetZoomLevel(Value: TZoomLevel);
+    function ScreenToWorld(aScreenX, aScreenY: Single): TPointF;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -146,13 +160,14 @@ type
   TBlockEntry = record
     caption: string;
     value: TBlockSize;
+    size: Integer;
   end;
 
 const
   BLOCK_SIZES: array[0..2] of TBlockEntry = (
-    (caption: 'Sm'; value: bsSmall),
-    (caption: 'Med'; value: bsMedium),
-    (caption: 'Lrg'; value: bsLarge)
+    (caption: 'Sm'; value: bsSmall; size: 3),
+    (caption: 'Med'; value: bsMedium; size: 5),
+    (caption: 'Lrg'; value: bsLarge; size: 7)
   );
 
 { TSessionFrame }
@@ -213,6 +228,9 @@ begin
   UserOffsetX := 0;
   UserOffsetY := 0;
   Arena.ControlStyle := Arena.ControlStyle + [csOpaque];
+
+  ActiveTool := ttPan;
+  MouseInArena := False;
 
   Stats := Default(TSessionStats);
   Layers := [dlAnts, dlFood, dlNests];
@@ -371,6 +389,8 @@ end;
 
 procedure TSessionFrame.SelectTool(aTool: TToolType);
 begin
+  ActiveTool := aTool;
+
   btnPan.Down := aTool = ttPan;
   btnDropFood.Down := aTool = ttDropFood;
   btnDropBlock.Down := aTool = ttDropBlock;
@@ -454,6 +474,43 @@ procedure TSessionFrame.UpdateAutoPan;
 begin
   PanX := Arena.Width / 2 - (128 + UserOffsetX) * ScaleValue;
   PanY := Arena.Height / 2 - (128 + UserOffsetY) * ScaleValue;
+end;
+
+procedure TSessionFrame.ApplyBrush(aGridX, aGridY: Integer);
+const
+  BRUSH_RADIUS = 5;
+  DRAW_STRENGTH = 3.0;
+var
+  bx, by: Integer;
+  Colony: TColony;
+begin
+  for Colony in Colonies do
+  begin
+    for by := aGridY - BRUSH_RADIUS to aGridY + BRUSH_RADIUS do
+      for bx := aGridX - BRUSH_RADIUS to aGridX + BRUSH_RADIUS do
+      begin
+        if (bx < 0) or (bx > High(TGridDimension)) or
+           (by < 0) or (by > High(TGridDimension)) then
+          Continue;
+
+        case ActiveTool of
+          ttDraw:
+          begin
+            if TARGET_LAYERS[TargetLayer.ItemIndex].value = dlSearching then
+              Colony.FoodLayer[bx, by] := Colony.FoodLayer[bx, by] + DRAW_STRENGTH
+            else
+              Colony.HomeLayer[bx, by] := Colony.HomeLayer[bx, by] + DRAW_STRENGTH;
+          end;
+          ttErase:
+          begin
+            if TARGET_LAYERS[TargetLayer.ItemIndex].value = dlSearching then
+              Colony.FoodLayer[bx, by] := 0
+            else
+              Colony.HomeLayer[bx, by] := 0;
+          end;
+        end;
+      end;
+  end;
 end;
 
 // after grid is built, or when terrain changes
@@ -587,7 +644,9 @@ begin
   if Assigned(BackgroundImage) then
     ACanvas.DrawImage(BackgroundImage, 0, 0);
 
-  // Draw pheromone layers
+  // Draw pheromone layers (clipped to grid)
+  ACanvas.Save;
+  ACanvas.ClipRect(RectF(0, 0, GRID_EXTENT, GRID_EXTENT));
   for Colony in Colonies do
   begin
     if dlSearching in Self.Layers then
@@ -595,6 +654,7 @@ begin
     if dlReturning in Self.Layers then
       DrawPheromoneLayer(Colony.HomeLayer, TAlphaColors.Lightcyan);
   end;
+  ACanvas.Restore;
 
   Paint := TSkPaint.Create;
   Paint.Style := TSkPaintStyle.Fill;
@@ -636,7 +696,12 @@ begin
           Continue;
 
         if Ant.State = asSearching then
-          Paint.Color := TAlphaColors.Lightsteelblue
+        begin
+          if Ant.CooldownTicks > 0 then
+            Paint.Color := TAlphaColors.Red
+          else
+            Paint.Color := TAlphaColors.Lightsteelblue;
+        end
         else
           Paint.Color := TAlphaColors.Limegreen;
 
@@ -645,6 +710,127 @@ begin
     end;
   end;
 
+  // Draw tool cursor (clipped to grid)
+  if MouseInArena and (ActiveTool <> ttPan) and
+     (WorldMouseX >= 1) and (WorldMouseX <= High(TGridDimension) - 1) and
+     (WorldMouseY >= 1) and (WorldMouseY <= High(TGridDimension) - 1) then
+  begin
+    ACanvas.Save;
+    ACanvas.ClipRect(RectF(0, 0, GRID_EXTENT, GRID_EXTENT));
+
+    Paint.Style := TSkPaintStyle.Stroke;
+    Paint.Color := TAlphaColors.White;
+    Paint.StrokeWidth := 1.0 / ScaleValue; // 1 pixel regardless of zoom
+
+    case ActiveTool of
+      ttDropFood:
+        ACanvas.DrawCircle(WorldMouseX, WorldMouseY, 1.5, Paint);
+      ttDropBlock:
+      begin
+        var half := BLOCK_SIZES[BlockSize.ItemIndex].size / 2;
+        ACanvas.DrawRect(
+          RectF(WorldMouseX - half, WorldMouseY - half,
+                WorldMouseX + half, WorldMouseY + half), Paint);
+      end;
+      ttDraw, ttErase:
+        ACanvas.DrawRect(
+          RectF(WorldMouseX - 5, WorldMouseY - 5,
+                WorldMouseX + 5, WorldMouseY + 5), Paint);
+    end;
+
+    ACanvas.Restore;
+  end;
+
+end;
+
+function TSessionFrame.ScreenToWorld(aScreenX, aScreenY: Single): TPointF;
+begin
+  Result.X := (aScreenX - PanX) / ScaleValue;
+  Result.Y := (aScreenY - PanY) / ScaleValue;
+end;
+
+procedure TSessionFrame.ArenaMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+begin
+  var wp := ScreenToWorld(X, Y);
+  WorldMouseX := wp.X;
+  WorldMouseY := wp.Y;
+
+  // paint while dragging with draw/erase tools
+  if MouseIsDown and (ActiveTool in [ttDraw, ttErase]) then
+    ApplyBrush(Round(WorldMouseX), Round(WorldMouseY));
+
+  // redraw cursor when sim is paused
+  if not SimTimer.Enabled then
+    Arena.Redraw;
+end;
+
+procedure TSessionFrame.ArenaMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+var
+  gridX, gridY: Integer;
+  amount: Integer;
+  p: TPoint;
+begin
+  MouseIsDown := False;
+
+  if Button <> mbLeft then
+    Exit;
+
+  gridX := Round(WorldMouseX);
+  gridY := Round(WorldMouseY);
+
+  // bounds check
+  if (gridX < 1) or (gridX > High(TGridDimension) - 1) or
+     (gridY < 1) or (gridY > High(TGridDimension) - 1) then
+    Exit;
+
+  case ActiveTool of
+    ttDropFood:
+    begin
+      amount := StrToIntDef(edtFoodDrop.Text, 100);
+      p := Point(gridX, gridY);
+      Simulator.Grid[p.X, p.Y].FoodAmount := Simulator.Grid[p.X, p.Y].FoodAmount + amount;
+      Simulator.FoodCells.Add(p);
+      Inc(Stats.RemainingFood, amount);
+      UpdateStatsDisplay;
+    end;
+
+    ttDropBlock:
+    begin
+      var half := BLOCK_SIZES[BlockSize.ItemIndex].size div 2;
+      for var by := gridY - half to gridY + half do
+        for var bx := gridX - half to gridX + half do
+          if (bx >= 1) and (bx <= High(TGridDimension) - 1) and
+             (by >= 1) and (by <= High(TGridDimension) - 1) then
+            Simulator.Grid[bx, by].Passable := False;
+      UpdateBackgroundImage;
+    end;
+  end;
+
+  Arena.Redraw;
+end;
+
+procedure TSessionFrame.ArenaMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  if Button = mbLeft then
+  begin
+    MouseIsDown := True;
+    if ActiveTool in [ttDraw, ttErase] then
+      ApplyBrush(Round(WorldMouseX), Round(WorldMouseY));
+  end;
+end;
+
+procedure TSessionFrame.ArenaMouseEnter(Sender: TObject);
+begin
+  MouseInArena := True;
+end;
+
+procedure TSessionFrame.ArenaMouseLeave(Sender: TObject);
+begin
+  MouseInArena := False;
+  if not SimTimer.Enabled then
+    Arena.Redraw;
 end;
 
 procedure TSessionFrame.ArenaResize(Sender: TObject);

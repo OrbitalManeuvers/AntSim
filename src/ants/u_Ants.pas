@@ -14,6 +14,7 @@ type
     TicksAlive: Integer; // 0 while asInNest; increments each tick once active
     TicksSincePickup: Integer; // reset to 0 when food is picked up; increments while returning
     WobbleFactor: Single; // individual variation: 0.5 = tight, 1.5 = loose
+    CooldownTicks: Integer; // >0 means repelled from food, decrements each tick
   end;
 
 implementation
