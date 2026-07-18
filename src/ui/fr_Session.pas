@@ -104,6 +104,11 @@ type
     WorldMouseY: Single;
     MouseInArena: Boolean;
     MouseIsDown: Boolean;
+    IsPanning: Boolean;
+    DragStartX: Integer;
+    DragStartY: Integer;
+    DragStartOffsetX: Single;
+    DragStartOffsetY: Single;
     procedure HandleSpeedClick(Sender: TObject);
     procedure HandleTargetLayerClick(Sender: TObject);
     procedure HandleBlockSizeClick(Sender: TObject);
@@ -471,7 +476,31 @@ begin
 end;
 
 procedure TSessionFrame.UpdateAutoPan;
+var
+  mapWidth, mapHeight, maxOffsetX, maxOffsetY: Single;
 begin
+  mapWidth := GRID_EXTENT * ScaleValue;
+  mapHeight := GRID_EXTENT * ScaleValue;
+
+  // clamp offsets so map stays in view
+  if mapWidth > Arena.Width then
+  begin
+    maxOffsetX := (mapWidth - Arena.Width) / (2 * ScaleValue);
+    if UserOffsetX > maxOffsetX then UserOffsetX := maxOffsetX;
+    if UserOffsetX < -maxOffsetX then UserOffsetX := -maxOffsetX;
+  end
+  else
+    UserOffsetX := 0;
+
+  if mapHeight > Arena.Height then
+  begin
+    maxOffsetY := (mapHeight - Arena.Height) / (2 * ScaleValue);
+    if UserOffsetY > maxOffsetY then UserOffsetY := maxOffsetY;
+    if UserOffsetY < -maxOffsetY then UserOffsetY := -maxOffsetY;
+  end
+  else
+    UserOffsetY := 0;
+
   PanX := Arena.Width / 2 - (128 + UserOffsetX) * ScaleValue;
   PanY := Arena.Height / 2 - (128 + UserOffsetY) * ScaleValue;
 end;
@@ -755,6 +784,40 @@ begin
   WorldMouseX := wp.X;
   WorldMouseY := wp.Y;
 
+  // handle panning
+  if IsPanning then
+  begin
+    var mapWidth := GRID_EXTENT * ScaleValue;
+    var mapHeight := GRID_EXTENT * ScaleValue;
+    var maxOffsetX: Single;
+    var maxOffsetY: Single;
+
+    if mapWidth > Arena.Width then
+    begin
+      UserOffsetX := DragStartOffsetX - (X - DragStartX) / ScaleValue;
+      maxOffsetX := (mapWidth - Arena.Width) / (2 * ScaleValue);
+      if UserOffsetX > maxOffsetX then UserOffsetX := maxOffsetX;
+      if UserOffsetX < -maxOffsetX then UserOffsetX := -maxOffsetX;
+    end
+    else
+      UserOffsetX := 0;
+
+    if mapHeight > Arena.Height then
+    begin
+      UserOffsetY := DragStartOffsetY - (Y - DragStartY) / ScaleValue;
+      maxOffsetY := (mapHeight - Arena.Height) / (2 * ScaleValue);
+      if UserOffsetY > maxOffsetY then UserOffsetY := maxOffsetY;
+      if UserOffsetY < -maxOffsetY then UserOffsetY := -maxOffsetY;
+    end
+    else
+      UserOffsetY := 0;
+
+    UpdateAutoPan;
+    Arena.Invalidate;
+    Arena.Redraw;
+    Exit;
+  end;
+
   // paint while dragging with draw/erase tools
   if MouseIsDown and (ActiveTool in [ttDraw, ttErase]) then
     ApplyBrush(Round(WorldMouseX), Round(WorldMouseY));
@@ -772,6 +835,7 @@ var
   p: TPoint;
 begin
   MouseIsDown := False;
+  IsPanning := False;
 
   if Button <> mbLeft then
     Exit;
@@ -816,8 +880,26 @@ begin
   if Button = mbLeft then
   begin
     MouseIsDown := True;
-    if ActiveTool in [ttDraw, ttErase] then
+
+    if ActiveTool = ttPan then
+    begin
+      IsPanning := True;
+      DragStartX := X;
+      DragStartY := Y;
+      DragStartOffsetX := UserOffsetX;
+      DragStartOffsetY := UserOffsetY;
+    end
+    else if ActiveTool in [ttDraw, ttErase] then
       ApplyBrush(Round(WorldMouseX), Round(WorldMouseY));
+  end
+  else if Button = mbMiddle then
+  begin
+    // middle-click pan always available
+    IsPanning := True;
+    DragStartX := X;
+    DragStartY := Y;
+    DragStartOffsetX := UserOffsetX;
+    DragStartOffsetY := UserOffsetY;
   end;
 end;
 
