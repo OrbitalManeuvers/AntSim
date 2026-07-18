@@ -42,8 +42,12 @@ object MainForm: TMainForm
             Items = <
               item
                 Action = actNewSession
-                Caption = '&New Session'
+                Caption = '&New Session...'
                 ShortCut = 16462
+              end
+              item
+                Action = actSaveSession
+                ShortCut = 16467
               end
               item
                 Caption = '-'
@@ -51,6 +55,7 @@ object MainForm: TMainForm
               item
                 Action = actExit
                 ImageIndex = 43
+                ShortCut = 32856
               end>
             Caption = '&File'
           end>
@@ -59,17 +64,24 @@ object MainForm: TMainForm
     Left = 72
     Top = 288
     StyleName = 'Platform Default'
+    object actNewSession: TAction
+      Category = 'File'
+      Caption = 'New Session...'
+      ShortCut = 16462
+      OnExecute = actNewSessionExecute
+    end
+    object actSaveSession: TAction
+      Category = 'File'
+      Caption = 'Save Session'
+      ShortCut = 16467
+      OnExecute = actSaveSessionExecute
+    end
     object actExit: TFileExit
       Category = 'File'
       Caption = 'E&xit'
       Hint = 'Exit|Quits the application'
       ImageIndex = 43
-    end
-    object actNewSession: TAction
-      Category = 'File'
-      Caption = 'New Session'
-      ShortCut = 16462
-      OnExecute = actNewSessionExecute
+      ShortCut = 32856
     end
   end
 end

@@ -9,7 +9,8 @@ uses System.Generics.Collections, System.Types,
 
   u_SimTypes,
   u_SessionParameters, u_SimController, u_Simulator, u_Colonies,
-  u_GraphicButtonBars, System.Skia, Vcl.Skia, Vcl.CheckLst, Vcl.Buttons;
+  u_GraphicButtonBars, System.Skia, Vcl.Skia, Vcl.CheckLst, Vcl.Buttons,
+  System.ImageList, Vcl.ImgList, PngImageList, PngSpeedButton;
 
 type
   TSessionStats = record
@@ -22,18 +23,14 @@ type
   TDisplayLayer = (dlAnts, dlFood, dlNests, dlSearching, dlReturning);
   TDisplayLayers = set of TDisplayLayer;
 
+  TZoomLevel = 1..10;
+
+  TToolType = (ttPan, ttDropFood, ttDropBlock, ttDraw, ttErase);
+
   TSessionFrame = class(TFrame, ISimNotifier)
-    ToolPanel: TPanel;
-    ToolPages: TPageControl;
-    SetupPage: TTabSheet;
-    SimPage: TTabSheet;
-    TotalAnts: TLabeledEdit;
-    TotalFoodUnits: TLabeledEdit;
-    LaunchBtn: TButton;
     lblRemaining: TLabel;
     Label2: TLabel;
     SimTimer: TTimer;
-    Placeholder: TShape;
     Arena: TSkPaintBox;
     Label1: TLabel;
     Label3: TLabel;
@@ -41,9 +38,27 @@ type
     lblReturning: TLabel;
     Label4: TLabel;
     lblTotalSteps: TLabel;
-    DisplayLayers: TCheckListBox;
-    DebugBtn: TSpeedButton;
-    procedure LaunchBtnClick(Sender: TObject);
+    ToolPanel: TPanel;
+    lblStats: TLabel;
+    shStats: TShape;
+    lblRun: TLabel;
+    shRun: TShape;
+    shSimSpeed: TShape;
+    lblView: TLabel;
+    shView: TShape;
+    cbDisplayLayers: TCheckListBox;
+    btnPan: TPngSpeedButton;
+    ToolImages: TPngImageList;
+    tbZoom: TTrackBar;
+    lblEdit: TLabel;
+    shEdit: TShape;
+    btnDropFood: TPngSpeedButton;
+    btnDropBlock: TPngSpeedButton;
+    btnDrawLayer: TPngSpeedButton;
+    btnEraseLayer: TPngSpeedButton;
+    edtFoodDrop: TEdit;
+    shBlockSize: TShape;
+    shTargetLayer: TShape;
     procedure HandleSimTimer(Sender: TObject);
     procedure ArenaDraw(ASender: TObject; const ACanvas: ISkCanvas;
       const ADest: TRectF; const AOpacity: Single);
@@ -52,6 +67,8 @@ type
       WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean);
     procedure DisplayLayersClickCheck(Sender: TObject);
     procedure DebugBtnClick(Sender: TObject);
+    procedure tbZoomChange(Sender: TObject);
+    procedure ToolClick(Sender: TObject);
   private
     { ISimNotifier }
     procedure FoodTaken(const aLoc: TPoint);
@@ -62,21 +79,29 @@ type
     Controller: TSimController;
     Simulator: TSimulator;
     SimSpeed: TButtonBar;
+    TargetLayer: TButtonBar;
+    BlockSize: TButtonBar;
     StepsPerTick: Integer;
     BackgroundImage: ISkImage;
     PanX: Single;
     PanY: Single;
-    Zoom: Single;
+    ZoomLevel: TZoomLevel;
+    ScaleValue: Single;
     UserOffsetX: Single;
     UserOffsetY: Single;
     Stats: TSessionStats;
     Layers: TDisplayLayers;
+    ZoomLocked: Boolean;
     procedure HandleSpeedClick(Sender: TObject);
+    procedure HandleTargetLayerClick(Sender: TObject);
+    procedure HandleBlockSizeClick(Sender: TObject);
     procedure UpdateBackgroundImage;
     procedure UpdateAutoPan;
     procedure GenerateMap;
     procedure PopulateFoods(aTotalCount: Integer);
     procedure UpdateStatsDisplay;
+    procedure SelectTool(aTool: TToolType);
+    procedure SetZoomLevel(Value: TZoomLevel);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -104,10 +129,48 @@ const
     (caption: '4x'; value: 4)
   );
 
+type
+  TLayerEntry = record
+    caption: string;
+    value: TDisplayLayer;
+  end;
+
+const
+  TARGET_LAYERS: array[0..1] of TLayerEntry = (
+    (caption: 'Srch'; value: dlSearching),
+    (caption: 'Rtrn'; value: dlReturning)
+  );
+
+type
+  TBlockSize = (bsSmall, bsMedium, bsLarge);
+  TBlockEntry = record
+    caption: string;
+    value: TBlockSize;
+  end;
+
+const
+  BLOCK_SIZES: array[0..2] of TBlockEntry = (
+    (caption: 'SM'; value: bsSmall),
+    (caption: 'MD'; value: bsMedium),
+    (caption: 'LG'; value: bsLarge)
+  );
 
 { TSessionFrame }
 
 constructor TSessionFrame.Create(AOwner: TComponent);
+var
+  captions: TCaptionArray;
+
+  function CreateButtonBar(aPlaceholder: TShape; aCallBack: TNotifyEvent): TButtonBar;
+  begin
+    Result := TButtonBar.Create(Self);
+    Result.BoundsRect := aPlaceholder.BoundsRect;
+    Result.Parent := aPlaceholder.Parent;
+    Result.Visible := True;
+    Result.OnClick := aCallBack;
+    aPlaceholder.Visible := False;
+  end;
+
 begin
   inherited;
 
@@ -116,36 +179,55 @@ begin
   Controller := TSimController.Create;
   Controller.Simulator := Simulator;
 
-  SimSpeed := TButtonBar.Create(Self);
-  SimSpeed.BoundsRect := Placeholder.BoundsRect;
-  SimSpeed.Parent := Placeholder.Parent;
+  // sim speed
+  SimSpeed := CreateButtonBar(shSimSpeed, HandleSpeedClick);
 
-  var captions: TCaptionArray;
   SetLength(captions, Length(SIM_SPEEDS));
   for var i := 0 to High(SIM_SPEEDS) do
     captions[i] := SIM_SPEEDS[i].caption;
-
   SimSpeed.Captions := captions;
-  SimSpeed.Visible := True;
-  SimSpeed.OnClick := HandleSpeedClick;
-  Placeholder.Visible := False;
+
+  // target layer
+  TargetLayer := CreateButtonBar(shTargetLayer, HandleTargetLayerClick);
+  SetLength(captions, Length(TARGET_LAYERS));
+  for var i := 0 to High(TARGET_LAYERS) do
+    captions[i] := TARGET_LAYERS[i].caption;
+  TargetLayer.Captions := captions;
+  TargetLayer.ItemIndex := 0;
+
+  // block size
+  BlockSize := CreateButtonBar(shBlockSize, HandleBlockSizeClick);
+  SetLength(captions, Length(BLOCK_SIZES));
+  for var i := 0 to High(BLOCK_SIZES) do
+    captions[i] := BLOCK_SIZES[i].caption;
+  BlockSize.Captions := captions;
+  BlockSize.ItemIndex := 0;
 
   StepsPerTick := 0;
 
+  tbZoom.Min := Low(TZoomLevel);
+  tbZoom.Max := High(TZoomLevel);
+
   PanX := 0;
   PanY := 0;
-  Zoom := 2.0;
   UserOffsetX := 0;
   UserOffsetY := 0;
   Arena.ControlStyle := Arena.ControlStyle + [csOpaque];
 
   Stats := Default(TSessionStats);
   Layers := [dlAnts, dlFood, dlNests];
+
   for var layer := Low(TDisplayLayer) to High(TDisplayLayer) do
   begin
     if layer in Layers then
-      DisplayLayers.Checked[Ord(layer)] := True;
+      cbDisplayLayers.Checked[Ord(layer)] := True;
   end;
+
+  btnPan.Tag := Ord(ttPan);
+  btnDropFood.Tag := Ord(ttDropFood);
+  btnDropBlock.Tag := Ord(ttDropBlock);
+  btnDrawLayer.Tag := Ord(ttDraw);
+  btnEraseLayer.Tag := Ord(ttErase);
 end;
 
 procedure TSessionFrame.DebugBtnClick(Sender: TObject);
@@ -198,7 +280,7 @@ procedure TSessionFrame.DisplayLayersClickCheck(Sender: TObject);
 begin
   Layers := [];
   for var layer := Low(TDisplayLayer) to High(TDisplayLayer) do
-    if DisplayLayers.Checked[Ord(layer)] then
+    if cbDisplayLayers.Checked[Ord(layer)] then
     begin
       Include(Layers, layer);
     end;
@@ -206,13 +288,6 @@ begin
   // if we're already running, just wait for the next draw cycle
   if not Self.SimTimer.Enabled then
     Arena.Redraw;
-end;
-
-procedure TSessionFrame.CreateSession(const Params: TSessionParameters);
-begin
-  ToolPages.ActivePage := SetupPage;
-  TotalAnts.Text := Params.TotalAnts.ToString;
-  TotalFoodUnits.Text := Params.TotalFoodUnits.ToString;
 end;
 
 procedure TSessionFrame.FoodDelivered(const aNest: TPoint);
@@ -244,43 +319,37 @@ begin
   begin
     if WheelDelta > 0 then
     begin
-      Zoom := Zoom * 1.1;
+      if ZoomLevel < High(TZoomLevel) then
+        SetZoomLevel(Succ(ZoomLevel));
     end
     else
     begin
-      Zoom := Zoom / 1.1;
-      Arena.Invalidate;  // makes sure the old, larger image gets erased
+      if ZoomLevel > Low(TZoomLevel) then
+        SetZoomLevel(Pred(ZoomLevel));
     end;
 
-    UpdateAutoPan;
-
-    Arena.Redraw;
+    Handled := True;
   end;
 end;
 
-procedure TSessionFrame.LaunchBtnClick(Sender: TObject);
+procedure TSessionFrame.CreateSession(const Params: TSessionParameters);
 begin
-  ToolPages.ActivePage := SimPage;
   SimSpeed.ItemIndex := 0;
 
   GenerateMap;
-
-  var foodUnits := StrToIntDef(TotalFoodUnits.Text, 10);
-  PopulateFoods(foodUnits);
-  Stats.RemainingFood := foodUnits;
-
-  // this will come from the params someday ...
-  var weights := Default(TColonyWeights);
-
-  var antCount := StrToIntDef(TotalAnts.Text, 1);
+  PopulateFoods(Params.TotalFoodUnits);
+  Stats.RemainingFood := Params.TotalFoodUnits;
 
   // create a colony
-  var colony := TColony.Create(weights, Point(127, 127), antCount);
+  var colony := TColony.Create(Params.Weights, Point(127, 127), Params.TotalAnts);
   Colonies.Add(colony);
 
   Simulator.AddColony(colony);
 
   UpdateBackgroundImage;
+
+  SelectTool(ttPan);
+  SetZoomLevel(3);
   UpdateAutoPan;
 
   UpdateStatsDisplay;
@@ -298,6 +367,50 @@ begin
     var p := Simulator.FoodCells.Last;
     Inc(Simulator.Grid[p.X, p.Y].FoodAmount, remainder);
   end;
+end;
+
+procedure TSessionFrame.SelectTool(aTool: TToolType);
+begin
+  btnPan.Down := aTool = ttPan;
+  btnDropFood.Down := aTool = ttDropFood;
+  btnDropBlock.Down := aTool = ttDropBlock;
+
+  btnDrawLayer.AllowAllUp := not (aTool in [ttDraw, ttErase]);
+  btnEraseLayer.AllowAllUp := btnDrawLayer.AllowAllUp;
+  btnDrawLayer.Down := aTool = ttDraw;
+  btnEraseLayer.Down := aTool = ttErase;
+end;
+
+procedure TSessionFrame.SetZoomLevel(Value: TZoomLevel);
+begin
+  if not ZoomLocked then
+  begin
+    ZoomLocked := True;
+    try
+      ScaleValue := 0.4 * Ord(Value);
+      tbZoom.Position := Ord(Value);
+
+      if Value < ZoomLevel then
+        Arena.Invalidate;
+      ZoomLevel := Value;
+
+      UpdateAutoPan;
+      Arena.Redraw;
+    finally
+      ZoomLocked := False;
+    end;
+  end;
+end;
+
+procedure TSessionFrame.tbZoomChange(Sender: TObject);
+begin
+  SetZoomLevel(tbZoom.Position);
+end;
+
+procedure TSessionFrame.ToolClick(Sender: TObject);
+begin
+  if Sender is TSpeedButton then
+    SelectTool(TToolType(TSpeedButton(Sender).Tag));
 end;
 
 procedure TSessionFrame.GenerateMap;
@@ -321,7 +434,6 @@ begin
       Simulator.Grid[x, y].Passable := False;
 
 
-
   // identify food locations
   Simulator.FoodCells.Add(Point(95, 60));
   Simulator.FoodCells.Add(Point(80, 64));
@@ -340,8 +452,8 @@ end;
 
 procedure TSessionFrame.UpdateAutoPan;
 begin
-  PanX := Arena.Width / 2 - (128 + UserOffsetX) * Zoom;
-  PanY := Arena.Height / 2 - (128 + UserOffsetY) * Zoom;
+  PanX := Arena.Width / 2 - (128 + UserOffsetX) * ScaleValue;
+  PanY := Arena.Height / 2 - (128 + UserOffsetY) * ScaleValue;
 end;
 
 // after grid is built, or when terrain changes
@@ -401,6 +513,16 @@ begin
   SimTimer.Enabled := StepsPerTick > 0;
 end;
 
+procedure TSessionFrame.HandleTargetLayerClick(Sender: TObject);
+begin
+  //
+end;
+
+procedure TSessionFrame.HandleBlockSizeClick(Sender: TObject);
+begin
+  //
+end;
+
 procedure TSessionFrame.ArenaDraw(ASender: TObject; const ACanvas: ISkCanvas;
   const ADest: TRectF; const AOpacity: Single);
 var
@@ -414,6 +536,7 @@ var
     Surface: ISkSurface;
     LayerCanvas: ISkCanvas;
     LayerPaint: ISkPaint;
+    DrawPaint: ISkPaint;
     maxVal: Single;
     alpha: Byte;
     x, y: Integer;
@@ -449,13 +572,16 @@ var
         end;
       end;
 
-    ACanvas.DrawImage(Surface.MakeImageSnapshot, 0, 0);
+    // draw with blur for a smooth glow effect
+    DrawPaint := TSkPaint.Create;
+    DrawPaint.ImageFilter := TSkImageFilter.MakeBlur(2.5, 2.5);
+    ACanvas.DrawImage(Surface.MakeImageSnapshot, 0, 0, DrawPaint);
   end;
 
 begin
   // Apply pan/zoom transforms
   ACanvas.Translate(PanX, PanY);
-  ACanvas.Scale(Zoom, Zoom);
+  ACanvas.Scale(ScaleValue, ScaleValue);
 
   // Draw terrain (one draw call for the whole grid)
   if Assigned(BackgroundImage) then
@@ -467,7 +593,7 @@ begin
     if dlSearching in Self.Layers then
       DrawPheromoneLayer(Colony.FoodLayer, TAlphaColors.Orange);
     if dlReturning in Self.Layers then
-      DrawPheromoneLayer(Colony.HomeLayer, TAlphaColors.Lightseagreen);
+      DrawPheromoneLayer(Colony.HomeLayer, TAlphaColors.Lightcyan);
   end;
 
   Paint := TSkPaint.Create;

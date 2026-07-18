@@ -62,6 +62,7 @@ begin
   begin
     Ants[i].State := asInNest;
     Ants[i].Loc := Nest;
+    Ants[i].WobbleFactor := 0.5 + Random;  // range 0.5 to 1.5
   end;
 end;
 
@@ -117,7 +118,7 @@ var
   Spawned: Integer;
   nx, ny: Integer;
   Ant: ^TAnt;
-  signal, wobble, deposit, dist: Single;
+  signal, wobble, deposit: Single;
 begin
   Spawned := 0;
 
@@ -150,7 +151,7 @@ begin
         else
           wobble := WOBBLE_MIN;
 
-        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble;
+        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble * Ant.WobbleFactor;
 
         // compute next cell
         nx := Ant.Loc.X + Round(Cos(Ant.Angle));
@@ -197,7 +198,7 @@ begin
           wobble := WOBBLE_MAX
         else
           wobble := WOBBLE_MIN;
-        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble;
+        Ant.Angle := Ant.Angle + (Random - 0.5) * 2 * wobble * Ant.WobbleFactor;
 
         // compute next cell
         nx := Ant.Loc.X + Round(Cos(Ant.Angle));

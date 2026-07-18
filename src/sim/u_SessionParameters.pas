@@ -10,6 +10,7 @@ type
   TSessionParameters = record
     // colony definitions
     // map definition/selection
+    Weights: TColonyWeights;
     TotalAnts: Integer;
     TotalFoodUnits: Integer;
   end;
