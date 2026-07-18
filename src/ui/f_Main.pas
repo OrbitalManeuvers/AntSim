@@ -29,7 +29,6 @@ type
 
     function CanCloseSession: Boolean;
     function CloseSession: Boolean;
-    procedure CreateNewSession(const aFileName: string);
     procedure HandleLibraryModified(Sender: TObject);
   public
   end;
@@ -97,30 +96,12 @@ begin
   Result := True;
 end;
 
-procedure TMainForm.CreateNewSession(const aFileName: string);
-begin
-//  var params := Default(TSessionParameters);
-//  params.TotalAnts := 600;
-//  params.TotalFoodUnits := 20000;
-//
-//  if (aFilename <> '') and TFile.Exists(aFileName) then
-//  begin
-//    // load from file
-//  end;
-//
-//  // create UI
-//  SessionFrame := TSessionFrame.Create(Self);
-//  SessionFrame.Align := alClient;
-//  SessionFrame.Parent := Self;
-//  SessionFrame.CreateSession(params);
-end;
-
 procedure TMainForm.actNewSessionExecute(Sender: TObject);
 begin
   if not CloseSession then
     Exit;
 
-  var session: TSession := nil;
+  var session: TSession;
 
   // select one
   var sm := TSessionManager.Create(Application);

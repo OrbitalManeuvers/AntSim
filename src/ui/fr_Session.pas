@@ -150,9 +150,9 @@ type
 
 const
   BLOCK_SIZES: array[0..2] of TBlockEntry = (
-    (caption: 'SM'; value: bsSmall),
-    (caption: 'MD'; value: bsMedium),
-    (caption: 'LG'; value: bsLarge)
+    (caption: 'Sm'; value: bsSmall),
+    (caption: 'Med'; value: bsMedium),
+    (caption: 'Lrg'; value: bsLarge)
   );
 
 { TSessionFrame }

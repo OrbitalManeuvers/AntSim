@@ -12,7 +12,6 @@ type
     fUntitled: Integer;
     fSessions: TObjectList<TSession>;
     fOnModified: TNotifyEvent;
-    fOnModifed: TNotifyEvent;
     procedure Load;
     function GetSession(I: Integer): TSession;
     function GetCount: Integer;
@@ -26,7 +25,7 @@ type
 
     property Sessions[I: Integer]: TSession read GetSession;
     property Count: Integer read GetCount;
-    property OnModified: TNotifyEvent read fOnModifed write fOnModifed;
+    property OnModified: TNotifyEvent read fOnModified write fOnModified;
   end;
 
 implementation
@@ -67,8 +66,8 @@ end;
 
 procedure TSessionLibrary.HandleSessionChanged(Sender: TObject);
 begin
-  if Assigned(fOnModifed) then
-    fOnModifed(Self);
+  if Assigned(fOnModified) then
+    fOnModified(Self);
 end;
 
 function TSessionLibrary.GetCount: Integer;
